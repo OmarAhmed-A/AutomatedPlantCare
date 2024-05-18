@@ -1,0 +1,16 @@
+0	1	mikroCPIC1618.exe -MSF -DBG -pP16F877A -DL -O11111114 -fo8 -N"C:\Users\omara\Desktop\VSCODE\PIC\MikroC-Project\DataAquisitionProj.mcppi" -SP"C:\Program Files\MICROC\mikroC PRO for PIC\Defs\" -SP"C:\Program Files\MICROC\mikroC PRO for PIC\Uses\P16\" -SP"C:\Users\omara\Desktop\VSCODE\PIC\MikroC-Project\" -IP"C:\Program Files\MICROC\mikroC PRO for PIC\Uses\P16\" "DataAquisitionProj.c" "__Lib_Math.mcl" "__Lib_MathDouble.mcl" "__Lib_System.mcl" "__Lib_Delays.mcl" "__Lib_CType.mcl" "__Lib_CString.mcl" "__Lib_Sprinti.mcl" "__Lib_ADC_A_C.mcl" "__Lib_PWM_c21.mcl" "__Lib_UART_c67.mcl" "__Lib_LcdConsts.mcl" "__Lib_Lcd.mcl"	 
+hint: 0	1139	Available RAM: 352 [bytes], Available ROM: 8192 [bytes]	 
+diagnostics: 0	122	Compilation Started	DataAquisitionProj.c
+warning: 170	1509	Generated baud rate is 9615 bps (error = 0.16 percent)	DataAquisitionProj.c
+diagnostics: 299	123	Compiled Successfully	DataAquisitionProj.c
+diagnostics: 0	127	All files Compiled in 203 ms	 
+warning: 739	1511	IRP bit must be set manually for indirect access to 'f' variable	__Lib_Sprinti.c
+warning: 742	1511	IRP bit must be set manually for indirect access to 'ap' variable	__Lib_Sprinti.c
+warning: 214	1511	IRP bit must be set manually for indirect access to 'Data' variable	DataAquisitionProj.c
+warning: 141	1511	IRP bit must be set manually for indirect access to 'command' variable	DataAquisitionProj.c
+hint: 0	1144	Used RAM (bytes): 248 (70%)  Free RAM (bytes): 104 (30%)	Used RAM (bytes): 248 (70%)  Free RAM (bytes): 104 (30%)
+hint: 0	1144	Used ROM (program words): 3549 (43%)  Free ROM (program words): 4643 (57%)	Used ROM (program words): 3549 (43%)  Free ROM (program words): 4643 (57%)
+diagnostics: 0	125	Project Linked Successfully	DataAquisitionProj.mcppi
+diagnostics: 0	128	Linked in 94 ms	 
+diagnostics: 0	129	Project 'DataAquisitionProj.mcppi' completed: 344 ms	 
+diagnostics: 0	103	Finished successfully: 18 May 2024, 22:50:33	DataAquisitionProj.mcppi
