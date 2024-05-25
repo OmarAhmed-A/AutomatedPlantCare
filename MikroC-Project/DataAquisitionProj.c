@@ -1,13 +1,4 @@
-
-
-// DHT11 pin connection (here data pin is connected to pin RB0)
-#define DHT11_PIN RB6_bit
-#define DHT11_PIN_DIR TRISB6_bit
-
 // Define pins
-sbit SOIL_SENSOR_PIN at RA0_bit; // Soil moisture sensor on analog pin AN0
-sbit LDR_PIN at RA1_bit;         // LDR sensor on analog pin AN1
-sbit PUMP_PIN at RC2_bit;        // Water pump on digital pin RC2
 
 // LCD module connections
 sbit LCD_RS at RB4_bit;
@@ -26,143 +17,187 @@ sbit LCD_D5_Direction at TRISB1_bit;
 sbit LCD_D4_Direction at TRISB0_bit;
 
 // Define constants
-#define SOIL_MOISTURE_THRESHOLD 500 // Threshold for dry soil (adjust as needed)
-#define WATERING_DURATION 1000      // Watering duration in milliseconds
-#define LOG_INTERVAL 10000          // Logging interval in milliseconds (1 hour)
-#define BAUD_RATE 9600              // UART baud rate for communication with ESP32
+#define BAUD_RATE 9600 // UART baud rate for communication with ESP32
 
 // Function prototypes
 void initUART();
 void initPWM();
 void startWatering();
 void stopWatering();
-void readSensors();
-void logData(char temp, char hum);
 void printToLCD(char *message);
-void initTimer();
-unsigned long millis();
-unsigned short int dht11_read_byte();
-void dht11_read(unsigned short int *dht11_humi, unsigned short int *dht11_temp);
+void StartSignal();
+unsigned short CheckResponse();
+unsigned short ReadByte();
+void ReadDHT11();
 
-// Global variables
+// globals
+bit wateringState; // Variable to track watering state
+char command;
+char message[] = "00.0";
+unsigned short TOUT = 0, CheckSum, i;
+unsigned int T_Byte1, T_Byte2, RH_Byte1, RH_Byte2;
+int moist, light;
+char buff[45];
 
-unsigned int soilMoistureValue = 0;
-int lightLevel = 0;
-unsigned long lastLogTime = 0;
-unsigned long wateringStartTime = 0;
-bit autoMode;
-unsigned long millisCount = 0;
-char humidity, temperature;
-char temp[] = "Temp = 00.0 C";
-char humi[] = "Humi = 00.0 %";
+sbit DHT at RB6_bit;
+sbit DataDir at TRISB6_bit;
 
-void Interrupt()
-{
 
-    if (TMR1IF_bit)
-    {
-        TMR1IF_bit = 0;
-        TMR1H = 0xF8;
-        TMR1L = 0x30;
-        millisCount++;
-    }
-}
-void InitTimer1()
-{
-    T1CON = 0x01;
-    TMR1IF_bit = 0;
-    TMR1H = 0xF8;
-    TMR1L = 0x30;
-    TMR1IE_bit = 1;
-    INTCON = 0xC0;
-}
+
+//STRING REQUIRED FOR UARTTTT "temp:40 moist:90 humid:80 light:889"
 
 void main()
 {
-
     ADCON0 = 0x01;  // Enable ADC
     TRISC2_bit = 0; // Set RC2 as output (Water pump)
-    autoMode = 1;
+    TRISB1_bit = 1; // Set RB1 as input (DHT11)
 
+    // Set up LCD
+    TRISB &= ~0xF0; // Set RB4-RB7 as outputs for LCD data lines
     Lcd_Init();
     Lcd_Cmd(_LCD_CLEAR);
+    Lcd_Cmd(_LCD_CURSOR_OFF);
 
     initUART();
     initPWM();
-    //    InitTimer1();
+    // InitADC();
+    ADC_Init();
+    wateringState = 0;
 
+    INTCON.GIE = 1;  // Enable global interrupt
+    INTCON.PEIE = 1; // Enable peripheral interrupt
+    // Configure Timer2 module
+    PIE1.TMR2IE = 1; // Enable Timer2 interrupt
+    T2CON = 0;       // Prescaler 1:1, and Timer2 is off initially
+    PIR1.TMR2IF = 0; // Clear TMR INT Flag bit
+    TMR2 = 0;
+    
     while (1)
     {
-
-        // Read sensor data
-
-        readSensors();
-
-        // read humidity (in rH%) and temperature (in ?C) from the DHT11 sensor
-        dht11_read(&humidity, &temperature);
-
-        temp[7] = temperature / 10 + '0';
-        temp[8] = temperature % 10 + '0';
-        humi[7] = humidity / 10 + '0';
-        humi[8] = humidity % 10 + '0';
-        temp[11] = 223; // put degree symbol (?)
-                        // lcd_out(1, 1, temp);
-                        // lcd_out(2, 1, humi);
-        printToLCD("Logging data...");
-        delay_ms(1000);
-        logData(humidity, temperature);
-
-        // Check if watering is needed
-        if (soilMoistureValue < SOIL_MOISTURE_THRESHOLD && autoMode)
-        {
-            startWatering();
-            printToLCD("Watering...");
-        }
-
-        //         Check if watering duration has elapsed
-        if (wateringStartTime > 0 && (millis() - wateringStartTime >= WATERING_DURATION))
-        {
-            stopWatering();
-            wateringStartTime = 0;
-            printToLCD("Watering complete");
-        }
-
-        //         Log data at specified interval
-        if (millis() - lastLogTime >= LOG_INTERVAL)
-        {
-            printToLCD("Logging data...");
-            logData(humidity, temperature);
-            lastLogTime = millis();
-        }
-
         // Check for incoming commands from ESP32
+        INTCON.GIE = 0;
+        ReadDHT11();
+        INTCON.GIE = 1;
+
+        printToLCD("Reading sensors...");
+        moist = ADC_Get_Sample(2);
+        // buff[16] = moist / 10 + 48;
+        // buff[17] = moist % 10 + 48;
+        light = ADC_Get_Sample(3);
+        // buff[36] = light / 10 + 48;
+        // buff[37] = light % 10 + 48;
+        //LDR to LUX
+        light = light * 0.48875855327;
+        for (i = 0; i < 5; i++)
+        {
+            message[i] = 0;
+        }
+
+        printToLCD("Moisture:");
+        IntToStr(moist, message);
+        Lcd_Out(1, 11, message);
+        Lcd_Out(1, 16, "%");
+
+
+        uart1_write_text(" ");
+        uart1_write_text("moist:");
+        delay_ms(20);
+        uart1_write_text(message);
+        delay_ms(20);
+
+        for (i = 0; i < 5; i++)
+        {
+            message[i] = 0;
+        }
+        // delay_ms(1000);
+
+        Lcd_Out(2, 1, "Light:");
+        IntToStr(light, message);
+        Lcd_Out(2, 11, message);
+        Lcd_Out(2, 16, "%");
+
+
+
+        uart1_write_text(" ");
+        uart1_write_text("light:");
+        delay_ms(20);
+        uart1_write_text(message);
+        delay_ms(20);
+
+        UART1_Write_Text("\r\n");
+
+
+
+        delay_ms(200);
+
+        //Clear "message"
+        for (i = 0; i < 5; i++)
+        {
+            message[i] = 0;
+        }
+
+
+
+
+        
+
+        
+
         if (UART1_Data_Ready())
         {
-            char command[20];
-            char delimiter[3] = "\r\n";               // Delimiter is a carriage return and newline
-            UART1_Read_Text(command, delimiter, 255); // Read until delimiter is found
 
-            if (strcmp(command, "water") == 0)
+            command = UART1_Read(); // Read a single character and wait for carriage return
+
+            if (command == '1')
             {
                 startWatering();
+                wateringState = 1;
+                printToLCD("Watering...");
             }
-            else if (strcmp(command, "stop") == 0)
+            else if (command == '2')
             {
                 stopWatering();
-            }
-            else if (strcmp(command, "auto") == 0)
-            {
-                autoMode = 1;
-            }
-            else if (strcmp(command, "manual") == 0)
-            {
-                autoMode = 0;
+                wateringState = 0;
+                printToLCD("Watering stopped");
             }
         }
 
-        delay_ms(100);
+        // printToLCD("Uart msg");
+
+        // //printToLCD(buff);
+
+        // // sprinti(buff, "temp:%s moist:%d humid:%s light:%d ", tempstr , moist, humidstr, light);
+        // printToLCD("sprintf done");
+        // delay_ms(200);
+
+        
+        // uart1_write_text(buff);
+        // printToLCD("Uart msg sent");
+        // delay_ms(200);
+
+        // UART1_Write_Text("\r\n");
+        // printToLCD("rn msg sent");
+        // delay_ms(200);
+
+        delay_ms(200);
+
+        
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void initUART()
 {
@@ -181,8 +216,7 @@ void initPWM()
 void startWatering()
 {
     // Start watering by setting PWM duty cycle
-    PWM1_Set_Duty(75); // Set duty cycle to 75%
-    wateringStartTime = millis();
+    PWM1_Set_Duty(192); // Set duty cycle to 75%
 }
 
 void stopWatering()
@@ -191,109 +225,123 @@ void stopWatering()
     PWM1_Set_Duty(0);
 }
 
-void readSensors()
-{
-
-    // Read soil moisture sensor
-    soilMoistureValue = ADC_Read(SOIL_SENSOR_PIN);
-
-    // Read DHT11 sensor
-
-    // IDFK yet https://libstock.mikroe.com/projects/view/1229/dht11-humidity-and-temperature-sensor-mikroc-library
-
-    // Read LDR sensor
-    lightLevel = ADC_Read(LDR_PIN);
-
-    // Lcd_Out(1, 1, temp);
-}
-
-void logData(char Temp, char hum)
-{
-
-    // Prepare log data string
-    char Data[50];
-    sprinti(Data, "Soil:%.2d,Temp:%.1f,Humid:%.1f,Light:%.2d", soilMoistureValue, temp, hum, lightLevel);
-    printToLCD(Data);
-
-    // Send log data to ESP32
-    UART1_Write_Text(Data);
-}
-
 void printToLCD(char *message)
 {
     // Print message to LCD
     Lcd_Cmd(_LCD_CLEAR);
     Lcd_Out(1, 1, message);
 }
-
-void initTimer()
+void StartSignal()
 {
-
-    // Enables all interrupts
-    INTCON.GIE = 1;
-    // Enables all peripheral interrupts
-    INTCON.PEIE = 1;
-    // Enables the TMR1 overflow interrupt
-    PIE1.TMR1IE = 1;
-    // 45536 inst to count 1 ms
-    TMR1L = 0x3C;
-    TMR1H = 0xB0;
-    T1CON.T1CKPS0 = 0;
-    T1CON.T1CKPS1 = 0;
-    // Enables Timer1
-    T1CON.TMR1ON = 1;
+    DataDir = 0; // Data port is output
+    DHT = 0;
+    Delay_ms(25);
+    DHT = 1;
+    Delay_us(30);
+    DataDir = 1; // Data port is input
 }
 
-unsigned long millis()
+unsigned short CheckResponse()
 {
-    // Function to get the current time in milliseconds
-    return millisCount;
-}
-
-unsigned short int dht11_read_byte()
-{
-    unsigned short int i = 8, dht11_byte = 0;
-
-    while (i--)
+    TOUT = 0;
+    TMR2 = 0;
+    T2CON.TMR2ON = 1; // start timer
+    while (!DHT && !TOUT)
+        ;
+    if (TOUT)
+        return 0;
+    else
     {
-        while (!DHT11_PIN)
+        TMR2 = 0;
+        while (DHT && !TOUT)
             ;
-
-        delay_us(40);
-
-        if (DHT11_PIN)
+        if (TOUT)
+            return 0;
+        else
         {
-            dht11_byte |= (1 << i); // set bit i
-            while (DHT11_PIN)
-                ;
+            T2CON.TMR2ON = 0;
+            return 1;
         }
     }
-    return (dht11_byte);
 }
 
-// read humidity (in rH%) and temperature (in ?Celsius) from sensor
-void dht11_read(unsigned short int *dht11_humi, unsigned short int *dht11_temp)
+unsigned short ReadByte()
 {
-    // send start signal
-    DHT11_PIN = 0;     // connection pin output low
-    DHT11_PIN_DIR = 0; // configure connection pin as output
-    delay_ms(25);      // wait 25 ms
-    DHT11_PIN = 1;     // connection pin output high
-    delay_us(70);      // wait 30 us
-    DHT11_PIN_DIR = 1; // configure connection pin as input
+    unsigned short num = 0, t;
+    DataDir = 1;
+    for (i = 0; i < 8; i++)
+    {
+        while (!DHT)
+            ;
+        Delay_us(40);
+        if (DHT)
+            num |= 1 << (7 - i);
+        while (DHT)
+            ;
+    }
+    return num;
+}
+void ReadDHT11()
+{
+    unsigned short check;
+    PIE1.TMR2IE = 1; // Enable Timer2 interrupt
+    StartSignal();
+    check = CheckResponse();
 
-    // check sensor response
-    while (DHT11_PIN)
-        ;
-    while (!DHT11_PIN)
-        ;
-    while (DHT11_PIN)
-        ;
+    RH_Byte1 = ReadByte();
+    RH_Byte2 = ReadByte();
+    T_Byte1 = ReadByte();
+    T_Byte2 = ReadByte();
+    CheckSum = ReadByte();
+    // Check for error in Data reception
 
-    // read data
-    *dht11_humi = dht11_read_byte(); // read humidity byte 1
-    dht11_read_byte();               // read humidity byte 2 (skipped)
-    *dht11_temp = dht11_read_byte(); // read temperature byte 1
-    dht11_read_byte();               // read temperature byte 2 (skipped)
-    dht11_read_byte();               // read checksum (skipped)
+    lcd_cmd(_lcd_clear);
+    lcd_out(1, 1, "Read");
+    delay_ms(1000);
+
+    if (CheckSum == ((RH_Byte1 + RH_Byte2 + T_Byte1 + T_Byte2) & 0xFF))
+    {
+        Lcd_Out(1, 1, "HUMIDITY:");
+
+        message[0] = RH_Byte1 / 10 + 48;
+        message[1] = RH_Byte1 % 10 + 48;
+        // buff[26] = RH_Byte1 / 10 + 48;
+        // buff[27] = RH_Byte1 % 10 + 48;
+        Lcd_Out(1, 11, message);
+        Lcd_Out(1, 16, "%");
+
+        UART1_Write_Text("humid:");
+        delay_ms(20);
+        UART1_Write_Text(message);
+        delay_ms(20);
+
+       // uart1_write('H');
+        //uart1_write_text(message);
+        //UART1_Write_Text("\r\n");
+        delay_ms(100);
+        Lcd_Out(2, 1, "TEMP:");
+        message[0] = T_Byte1 / 10 + 48;
+        message[1] = T_Byte1 % 10 + 48;
+        // buff[6] = T_Byte1 / 10 + 48;
+        // buff[7] = T_Byte1 % 10 + 48;
+        Lcd_Out(2, 11, message);
+        Lcd_Chr_CP(223);
+        Lcd_Out(2, 16, "C");
+
+        uart1_write_text(" ");
+        UART1_Write_Text("temp:");
+        delay_ms(20);
+        UART1_Write_Text(message);
+        delay_ms(20);
+
+       // uart1_write('T');
+        //uart1_write_text(message);
+        //UART1_Write_Text("\r\n");
+        Delay_ms(200);
+    }
+    lcd_cmd(_lcd_clear);
+    lcd_out(1, 1, "finish");
+    delay_ms(100);
+
+    PIE1.TMR2IE = 0; // disable Timer2 interrupt
 }
