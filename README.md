@@ -600,7 +600,4 @@ void readSensor() {
 - Omar Ahmed Elsayed
 - Marwan Hazem
 - Khaled kamal
-- filopateer foad
-
-## License
-
+- Filopateer foad
