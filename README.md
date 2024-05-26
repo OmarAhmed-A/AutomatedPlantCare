@@ -598,7 +598,9 @@ void readSensor() {
 
 ## Contributors
 - Omar Ahmed Elsayed
-- 
+- Marwan Hazem
+- Khaled kamal
+- filopateer foad
 
 ## License
 
